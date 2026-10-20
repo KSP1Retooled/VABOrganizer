@@ -1,4 +1,5 @@
-﻿using KSP.UI.Screens;
+﻿using System.Collections.Generic;
+using KSP.UI.Screens;
 using HarmonyLib;
 
 namespace VABOrganizer.HarmonyPatches
@@ -6,6 +7,12 @@ namespace VABOrganizer.HarmonyPatches
   [HarmonyPatch(typeof(EditorPartList))]
   internal class PatchEditorPartList
   {
+    /// <summary>
+    /// The part sorting for the Profile and Custom sorters, or null when a stock sorter is active.
+    /// The game's PartListSorting only knows the stock sort keys, so these are applied in SortCategoryList instead
+    /// </summary>
+    private static IComparer<AvailablePart> customPartSorting;
+
     /// <summary>
     /// Patch the sorter to add the Bulkhead sorter
     /// </summary>
@@ -17,12 +24,16 @@ namespace VABOrganizer.HarmonyPatches
     [HarmonyPatch("SortingCallback")]
     internal static bool PatchSorting(EditorPartList __instance, int button, bool asc)
     {
-      var partSortProperty = __instance.GetType().GetField("currentPartSorting", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
       var assemblySortProperty = __instance.GetType().GetField("currentSubassemblySorting", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+      // Stock sorts use the game's own part sorting
+      if (button < 4)
+      {
+        customPartSorting = null;
+      }
       // Profile sort
       if (button == 4)
       {
-        partSortProperty.SetValue(__instance, new RUIutils.FuncComparer<AvailablePart>((AvailablePart r1, AvailablePart r2) => RUIutils.SortAscDescPrimarySecondary(asc, r1.MaxSizeBulkheadData().Size.CompareTo(r2.MaxSizeBulkheadData().Size), r1.title.CompareTo(r2.title))));
+        customPartSorting = new RUIutils.FuncComparer<AvailablePart>((AvailablePart r1, AvailablePart r2) => RUIutils.SortAscDescPrimarySecondary(asc, r1.MaxSizeBulkheadData().Size.CompareTo(r2.MaxSizeBulkheadData().Size), r1.title.CompareTo(r2.title)));
         assemblySortProperty.SetValue(__instance, new RUIutils.FuncComparer<ShipTemplate>((ShipTemplate r1, ShipTemplate r2) => RUIutils.SortAscDescPrimarySecondary(asc, r1.shipSize.magnitude.CompareTo(r2.shipSize.magnitude), r1.partCount.CompareTo(r2.partCount), r1.shipName.CompareTo(r2.shipName))));
       }
       // Custom sort
@@ -31,12 +42,29 @@ namespace VABOrganizer.HarmonyPatches
         if (AdvancedSorting.CurrentAdvancedSort != null)
         {
           string sortKey = AdvancedSorting.CurrentAdvancedSort.Sorter;
-          partSortProperty.SetValue(__instance,
+          customPartSorting =
             new RUIutils.FuncComparer<AvailablePart>((AvailablePart r1, AvailablePart r2) =>
-            RUIutils.SortAscDescPrimarySecondary(asc, CompareAdvancedSortValues(r1, r2, sortKey), r1.title.CompareTo(r2.title))));
+            RUIutils.SortAscDescPrimarySecondary(asc, CompareAdvancedSortValues(r1, r2, sortKey), r1.title.CompareTo(r2.title)));
         }
       }
       return true;
+    }
+
+    /// <summary>
+    /// Patch the category list sort to apply the Profile and Custom sorters
+    /// </summary>
+    /// <param name="___categoryList"></param>
+    /// <returns></returns>
+    [HarmonyPrefix]
+    [HarmonyPatch("SortCategoryList")]
+    internal static bool PatchSortCategoryList(List<AvailablePart> ___categoryList)
+    {
+      if (customPartSorting == null)
+      {
+        return true;
+      }
+      ___categoryList.Sort(customPartSorting);
+      return false;
     }
 
     /// <summary>
@@ -70,6 +98,11 @@ namespace VABOrganizer.HarmonyPatches
       if (!customCategory)
       {
         SubcategorySorting.AssignIconToCategory(newIcon, availablePart);
+      }
+      else
+      {
+        // The game no longer moves icons back to the part grid on every refresh, so pull them out of the subcategories
+        newIcon.transform.SetParent(__instance.partGrid, false);
       }
     }
     /// <summary>
@@ -121,8 +154,7 @@ namespace VABOrganizer.HarmonyPatches
     internal static bool PatchStart(EditorPartList __instance)
     {
       /// We're defaulting the bulkhead sorter to on, so we have to patch it here
-      var partSortProperty = __instance.GetType().GetField("currentPartSorting", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-      partSortProperty.SetValue(__instance, new RUIutils.FuncComparer<AvailablePart>((AvailablePart r1, AvailablePart r2) => RUIutils.SortAscDescPrimarySecondary(true, r1.MaxSizeBulkheadData().Size.CompareTo(r2.MaxSizeBulkheadData().Size), r1.title.CompareTo(r2.title))));
+      customPartSorting = new RUIutils.FuncComparer<AvailablePart>((AvailablePart r1, AvailablePart r2) => RUIutils.SortAscDescPrimarySecondary(true, r1.MaxSizeBulkheadData().Size.CompareTo(r2.MaxSizeBulkheadData().Size), r1.title.CompareTo(r2.title)));
       SubcategorySorting.CreateVABSubcategoryUI();
       return true;
     }
