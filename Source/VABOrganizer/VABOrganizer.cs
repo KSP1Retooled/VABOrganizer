@@ -51,7 +51,6 @@ namespace VABOrganizer
 
       AdvancedSortPrefab = prefabs.LoadAsset("OrganizerFilters") as GameObject;
       AdvancedSortPrefab.AddComponent<UIAdvancedSorterWidget>().AssignReferences();
-      AdvancedSortPrefab.transform.SetParent(this.transform);
 
       Sprite[] spriteSheet = prefabs.LoadAssetWithSubAssets<Sprite>(SPRITE_ATLAS_NAME);
       Sprites = new Dictionary<string, Sprite>();
